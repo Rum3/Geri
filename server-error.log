@@ -1,0 +1,14 @@
+C:\Users\Lenovo\Desktop\Geriiii\server.js:676
+      ...minimarkets.map((minimarket) => getDistanceMeters(coordinates, minimarket.coordinates))
+                                         ^
+
+ReferenceError: getDistanceMeters is not defined
+    at C:\Users\Lenovo\Desktop\Geriiii\server.js:676:42
+    at Array.map (<anonymous>)
+    at C:\Users\Lenovo\Desktop\Geriiii\server.js:676:22
+    at Array.map (<anonymous>)
+    at buildAnalysis (C:\Users\Lenovo\Desktop\Geriiii\server.js:673:45)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async C:\Users\Lenovo\Desktop\Geriiii\server.js:723:12
+
+Node.js v24.19.0

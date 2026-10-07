@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="bg">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Google Maps Collector</title>
+    <link rel="stylesheet" href="/style.css" />
+    <style>
+      .collector-shell {
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 24px;
+      }
+      .code-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        border-radius: 12px;
+        padding: 16px;
+        white-space: pre-wrap;
+        font-family: Consolas, monospace;
+        color: #dbeafe;
+        line-height: 1.5;
+        overflow-x: auto;
+      }
+      .action-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 18px;
+      }
+      .secondary-action, .primary-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid transparent;
+      }
+      .primary-action {
+        background: var(--accent);
+        color: #082f49;
+      }
+      .secondary-action {
+        background: rgba(15, 23, 42, 0.75);
+        color: var(--text);
+        border-color: rgba(148, 163, 184, 0.39);
+      }
+      ol {
+        padding-left: 20px;
+      }
+      li + li {
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-shell collector-shell">
+      <div class="card panel">
+        <h1>Събиране на адреси от Google Maps</h1>
+        <p>
+          Това е browser-side колекция на видимите адреси в Google Maps. Не генерира фалшиви данни и събира само това, което е видимо в момента в браузъра.
+        </p>
+
+        <ol>
+          <li>Отвори Google Maps търсене за <strong>Minimart Sofia</strong>.</li>
+          <li>Използвай страницата изцяло, за да заредиш възможно най-много резултати.</li>
+          <li>Отвори Developer Tools → Console.</li>
+          <li>Постави кода по-долу и натисни Enter.</li>
+        </ol>
+
+        <div class="action-row">
+          <a class="primary-action" href="https://www.google.com/maps/search/Minimart+Sofia" target="_blank" rel="noopener noreferrer">Отвори Google Maps</a>
+          <button class="secondary-action" type="button" id="copyScriptBtn">Копирай кода</button>
+        </div>
+
+        <div class="code-box" id="collectorScript">
+(() => {
+  const MAX_SCROLLS = 20;
+  const PAUSE_MS = 900;
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  function normalizeText(value) {
+    return String(value || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function isLikelyAddress(text) {
+    const t = normalizeText(text);
+    if (!t || t.length < 12) return false;
+    return /(?:ул\.|улица|бул\.|булевард|гр\.|кв\.|ж\.к\.|№|,\s*София|София)/i.test(t)
+      || /(?:street|street\.|blvd|boulevard|sofia|city|district)/i.test(t);
+  }
+  function cleanCandidate(text) {
+    let t = normalizeText(text)
+      .replace(/^(?:Minimart|Минимарт)\s*[-–:]*\s*/i, '')
+      .replace(/\s*\|\s*.*$/, '')
+      .replace(/\s*—\s*.*$/, '')
+      .replace(/\s*\(.*?\)\s*$/, '')
+      .replace(/\s*•\s*.*$/, '')
+      .replace(/\s+\d{1,2}:\d{2}\s*ч\.?\s*.*$/, '')
+      .replace(/\s+Отваря.*$/, '')
+      .replace(/\s+Затваря.*$/, '')
+      .trim();
+    if (!isLikelyAddress(t)) return null;
+    t = t.replace(/^\W+|\W+$/g, '');
+    return t || null;
+  }
+  function extractFromNode(node) {
+    if (!node) return [];
+    const parts = new Set();
+    const text = normalizeText(node.innerText || node.textContent || '');
+    if (isLikelyAddress(text)) {
+      const cleaned = cleanCandidate(text);
+      if (cleaned) parts.add(cleaned);
+    }
+    const descendants = node.querySelectorAll('*');
+    for (const el of descendants) {
+      const value = normalizeText(el.textContent || '');
+      if (!value || value.length < 12) continue;
+      const cleaned = cleanCandidate(value);
+      if (cleaned) parts.add(cleaned);
+    }
+    return [...parts];
+  }
+  function findCandidateContainers() {
+    const selectors = ['article', '[role="article"]', 'div[role="listitem"]', '.section-result', '[data-result-id]', '[jsaction*="place-card"]', '[aria-label*="Резултати"]', 'div[data-index]'];
+    const nodes = new Set();
+    for (const selector of selectors) {
+      for (const el of document.querySelectorAll(selector)) {
+        if (el && (el.offsetParent !== null || el.getClientRects().length > 0)) {
+          nodes.add(el);
+        }
+      }
+    }
+    return [...nodes];
+  }
+  async function collectVisibleAddresses({ scroll = true, maxScrolls = 20 } = {}) {
+    const seen = new Set();
+    const results = [];
+    async function gatherOnce() {
+      const containers = findCandidateContainers();
+      for (const container of containers) {
+        const list = extractFromNode(container);
+        for (const address of list) {
+          if (!seen.has(address)) {
+            seen.add(address);
+            results.push(address);
+          }
+        }
+      }
+      return results.length;
+    }
+    await gatherOnce();
+    if (scroll) {
+      for (let i = 0; i < maxScrolls; i++) {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'auto' });
+        await wait(900);
+        await gatherOnce();
+        const bottomReached = window.innerHeight + window.scrollY >= document.body.scrollHeight - 400;
+        if (bottomReached) break;
+      }
+    }
+    const unique = [...new Set(results)].sort((a, b) => a.localeCompare(b, 'bg'));
+    return { total: unique.length, addresses: unique, json: JSON.stringify(unique, null, 2) };
+  }
+  async function exportAddresses() {
+    const data = await collectVisibleAddresses();
+    const blob = new Blob([data.json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'minimart-sofia-addresses.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    return data;
+  }
+  function printAddresses() {
+    return collectVisibleAddresses().then((data) => {
+      console.log('FOUND', data.total, 'addresses');
+      console.log(data.addresses);
+      return data;
+    });
+  }
+  window.MinimartGoogleCollector = { collectVisibleAddresses, exportAddresses, printAddresses };
+  console.log('Google Maps collector ready. Run: MinimartGoogleCollector.printAddresses() or MinimartGoogleCollector.exportAddresses()');
+})();
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const btn = document.getElementById('copyScriptBtn');
+      btn.addEventListener('click', async () => {
+        const script = document.getElementById('collectorScript').textContent;
+        await navigator.clipboard.writeText(script);
+        btn.textContent = 'Копирано';
+        setTimeout(() => (btn.textContent = 'Копирай кода'), 1200);
+      });
+    </script>
+  </body>
+</html>

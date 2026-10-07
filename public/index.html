@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="bg">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Софийски обяви и локален риск</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">София</p>
+          <h1>Всички открити обяви от imot.bg</h1>
+        </div>
+        <div class="badge">40–100 кв.м.</div>
+      </header>
+
+      <main>
+        <nav class="tab-nav" aria-label="Секции">
+          <button class="tab-button active" data-tab="listings">Обяви</button>
+          <button class="tab-button" data-tab="minimart">Адреси на Минимарт</button>
+          <button class="tab-button" data-tab="analysis">Анализирани обяви</button>
+        </nav>
+
+        <section id="listingsView" class="tab-panel active card panel">
+          <div class="filter-row">
+            <h2 id="listingsHeading">Отворени обяви в София</h2>
+            <label class="lookback-control" for="hoursFilter">
+              Показване за последните
+              <select id="hoursFilter">
+                <option value="all" selected>Без лимит</option>
+                <option value="6">6 часа</option>
+                <option value="12">12 часа</option>
+                <option value="24">24 часа</option>
+                <option value="48">48 часа</option>
+                <option value="72">72 часа</option>
+                <option value="168">7 дни</option>
+              </select>
+            </label>
+          </div>
+          <p id="resultsMeta">Зареждане на живи данни...</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Източник</th>
+                  <th>Адрес</th>
+                  <th>Площ</th>
+                  <th>Квартал</th>
+                  <th>Публикувана</th>
+                  <th>Линк</th>
+                </tr>
+              </thead>
+              <tbody id="listingsTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="minimartView" class="tab-panel card panel">
+          <div class="filter-row">
+            <h2>Адреси на Минимарт в София</h2>
+            <a class="secondary-action" href="/google-maps-collector.html" target="_blank" rel="noopener noreferrer">Събиране от Google Maps</a>
+          </div>
+          <div class="minimart-list-panel plain-list-panel">
+            <ul id="minimartList" class="minimart-list"></ul>
+          </div>
+        </section>
+
+        <section id="analysisView" class="tab-panel card panel">
+          <div class="filter-row">
+            <h2>Анализирани обяви</h2>
+          </div>
+          <div id="analysisSummary" class="summary-grid"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Адрес</th>
+                  <th>Площ</th>
+                  <th>Разстояние</th>
+                  <th>Статус</th>
+                  <th>Линк</th>
+                </tr>
+              </thead>
+              <tbody id="analysisTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
