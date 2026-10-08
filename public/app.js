@@ -1,19 +1,20 @@
+let lastAnalysisEntries = [];
+let aiConfigured = false;
+const aiResults = new Map();
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 async function loadAnalysis() {
-  const hoursFilter = document.getElementById('hoursFilter');
-  const selectedHours = hoursFilter?.value || 'all';
-  const response = await fetch(`/api/imot-open-listings?hours=${encodeURIComponent(selectedHours)}`);
+  const response = await fetch('/api/imot-open-listings');
   const data = await response.json();
 
-  const lookbackHours = data.lookbackHours;
-  const headingText = lookbackHours === null || lookbackHours === undefined || selectedHours === 'all'
-    ? 'Отворени обяви в София без ограничение във времето'
-    : `Отворени обяви в София от последните ${lookbackHours}ч`;
-  document.getElementById('listingsHeading').textContent = headingText;
-
-  const resultsMeta = document.getElementById('resultsMeta');
-  if (resultsMeta) {
-    resultsMeta.textContent = `Показани: ${data.total || 0} обяви от imot.bg, 40–100 кв.м.`;
-  }
+  document.getElementById('listingCount').textContent = data.total || 0;
 
   const listingsTable = document.getElementById('listingsTable');
   const listings = Array.isArray(data.listings) ? data.listings : [];
@@ -21,7 +22,7 @@ async function loadAnalysis() {
   if (listings.length === 0) {
     listingsTable.innerHTML = `
       <tr>
-        <td colspan="6">${(lookbackHours === null || lookbackHours === undefined || selectedHours === 'all') ? 'Няма открити обяви в София в диапазона 40–100 кв.м. без ограничение във времето.' : `Няма открити обяви в София в диапазона 40–100 кв.м. от последните ${lookbackHours} часа.`}</td>
+        <td colspan="6">Няма открити обяви според показаните филтри.</td>
       </tr>
     `;
     return;
@@ -46,12 +47,11 @@ async function loadAnalysis() {
 }
 
 async function loadAnalysisSection() {
-  const hoursFilter = document.getElementById('hoursFilter');
-  const selectedHours = hoursFilter?.value || 'all';
-  const response = await fetch(`/api/analysis?hours=${encodeURIComponent(selectedHours)}`);
+  const response = await fetch('/api/analysis');
   const data = await response.json();
   const summary = data.summary || {};
   const entries = Array.isArray(data.listings) ? data.listings : [];
+  lastAnalysisEntries = entries;
 
   const analysisSummary = document.getElementById('analysisSummary');
   analysisSummary.innerHTML = `
@@ -77,36 +77,150 @@ async function loadAnalysisSection() {
   if (!entries.length) {
     analysisTable.innerHTML = `
       <tr>
-        <td colspan="5">Няма анализирани обяви за избрания период.</td>
+        <td colspan="6">Няма анализирани обяви.</td>
       </tr>
     `;
     return;
   }
 
   analysisTable.innerHTML = entries
-    .map((listing) => {
+    .map((listing, index) => {
       const distance = listing.distanceToNearestMinimarket ?? 0;
       const riskClass = listing.riskStatus || 'far';
       const riskText = riskClass === 'very_close' ? 'Много близо' : riskClass === 'near' ? 'Близо' : 'Далече';
+      const aiCell = aiResults.has(index)
+        ? renderAiResult(aiResults.get(index))
+        : `<button type="button" class="secondary-action ai-btn" data-ai-index="${index}" ${aiConfigured ? '' : 'disabled'}>AI анализ</button>`;
       return `
         <tr>
           <td>${listing.address || listing.title || 'Адрес не е наличен'}</td>
           <td>${listing.area} кв.м.</td>
           <td>${distance} м</td>
           <td><span class="status-pill ${riskClass}">${riskText}</span></td>
+          <td>${aiCell}</td>
           <td><a href="${listing.url}" target="_blank" rel="noreferrer">Отвори</a></td>
         </tr>
       `;
     })
     .join('');
+
+  document.querySelectorAll('[data-ai-index]').forEach((button) => {
+    button.addEventListener('click', () => analyzeListingWithAi(Number(button.dataset.aiIndex), button));
+  });
 }
 
-const hoursFilter = document.getElementById('hoursFilter');
-if (hoursFilter) {
-  hoursFilter.addEventListener('change', () => {
-    loadAnalysis();
-    loadAnalysisSection();
-  });
+function renderAiResult(result) {
+  if (result.error) {
+    return `<span class="ai-result ai-error">${escapeHtml(result.error)}</span>`;
+  }
+  const verdictClass = result.verdict === 'много добра' ? 'far'
+    : result.verdict === 'добра' ? 'far'
+    : result.verdict === 'лоша' ? 'very_close' : 'near';
+  const criteriaLabels = {
+    potencialni_klienti: 'Потенциални клиенти',
+    konkurencia: 'Конкуренция',
+    peshehoden_potok: 'Пешеходен поток',
+    jilishtna_zona: 'Жилищна зона',
+    dostupnost: 'Достъпност',
+    vidimost: 'Видимост',
+    parkirane: 'Паркиране',
+    potencialen_oborot: 'Потенциален оборот',
+  };
+  const criteria = result.criteria || {};
+  const rows = Object.keys(criteriaLabels)
+    .filter((key) => criteria[key] !== null && criteria[key] !== undefined)
+    .map((key) => `<li><span>${criteriaLabels[key]}</span><strong>${criteria[key]}/10</strong></li>`)
+    .join('');
+  return `
+    <div class="ai-result">
+      <span class="status-pill ${verdictClass}">${escapeHtml(result.verdict)} ${result.score}/100</span>
+      ${rows ? `<ul class="ai-criteria">${rows}</ul>` : ''}
+      <span class="ai-reasoning">${escapeHtml(result.reasoning)}</span>
+    </div>
+  `;
+}
+
+function getCustomPrompt() {
+  const el = document.getElementById('aiPrompt');
+  return el ? el.value.trim() : '';
+}
+
+async function analyzeListingWithAi(index, button) {
+  const listing = lastAnalysisEntries[index];
+  if (!listing) return;
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Анализирам...';
+  }
+  try {
+    const response = await fetch('/api/analyze-minimart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listing, prompt: getCustomPrompt() }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'AI анализът се провали.');
+    }
+    aiResults.set(index, data);
+  } catch (error) {
+    aiResults.set(index, { error: error.message });
+  }
+  loadAnalysisSection();
+}
+
+async function analyzeAllWithAi() {
+  if (!aiConfigured || lastAnalysisEntries.length === 0) return;
+  const button = document.getElementById('analyzeAllAi');
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Анализирам всички...';
+  }
+  for (let i = 0; i < lastAnalysisEntries.length; i += 1) {
+    if (aiResults.has(i) && !aiResults.get(i).error) continue;
+    try {
+      const response = await fetch('/api/analyze-minimart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listing: lastAnalysisEntries[i], prompt: getCustomPrompt() }),
+      });
+      const data = await response.json();
+      aiResults.set(i, response.ok ? data : { error: data.error || 'Грешка' });
+    } catch (error) {
+      aiResults.set(i, { error: error.message });
+    }
+  }
+  if (button) {
+    button.disabled = false;
+    button.textContent = 'AI анализ на всички';
+  }
+  loadAnalysisSection();
+}
+
+async function loadAiStatus() {
+  const badge = document.getElementById('aiStatusBadge');
+  const analyzeAllButton = document.getElementById('analyzeAllAi');
+  const promptArea = document.getElementById('aiPrompt');
+  try {
+    const response = await fetch('/api/ai-status');
+    if (!response.ok) {
+      throw new Error(`сървърът върна ${response.status} — рестартирай го с новия код (node server.js) и отвори през http://localhost:3000`);
+    }
+    const data = await response.json();
+    aiConfigured = Boolean(data.configured);
+    if (promptArea && !promptArea.value && data.defaultPrompt) {
+      promptArea.value = data.defaultPrompt;
+    }
+    if (badge) {
+      badge.textContent = aiConfigured ? `AI: Gemini ${data.model || ''} готов` : 'AI: нужен е GEMINI_API_KEY';
+      badge.classList.remove('near', 'far', 'very_close');
+      badge.classList.add(aiConfigured ? 'far' : 'very_close');
+    }
+    if (analyzeAllButton) analyzeAllButton.disabled = !aiConfigured;
+  } catch (error) {
+    if (badge) badge.textContent = `AI: недостъпен (${error.message})`;
+    aiConfigured = false;
+  }
 }
 
 function setActiveTab(tabName) {
@@ -147,3 +261,6 @@ async function loadMinimarts() {
 loadAnalysis();
 loadAnalysisSection();
 loadMinimarts();
+loadAiStatus();
+
+document.getElementById('analyzeAllAi')?.addEventListener('click', analyzeAllWithAi);

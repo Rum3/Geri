@@ -1,6 +1,16 @@
-const { parseListingHrefCandidates, normalizeListingUrl, extractAreaFromText, extractPublishedAgeHours, extractAddressFromTitle } = require('../server');
+const { fetchOpenSofiaListings, parseListingHrefCandidates, normalizeListingUrl, extractAreaFromText, extractPublishedAgeHours, extractAddressFromTitle } = require('../server');
 
 describe('live listing parser', () => {
+  test('does not show stale listings when the live Imot source is unavailable', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: false });
+
+    try {
+      await expect(fetchOpenSofiaListings()).resolves.toEqual([]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   test('extracts real imot.bg listing URLs from HTML', () => {
     const html = `
       <a href="//www.imot.bg/obiava-12345-something">Offer 1</a>

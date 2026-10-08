@@ -1,10 +1,37 @@
+try {
+  require('dotenv').config();
+} catch (e) {
+  try {
+    const fs = require('fs');
+    const envPath = require('path').join(__dirname, '.env');
+    if (fs.existsSync(envPath)) {
+      const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eq = trimmed.indexOf('=');
+        if (eq === -1) continue;
+        const key = trimmed.slice(0, eq).trim();
+        let value = trimmed.slice(eq + 1).trim();
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+        if (key && process.env[key] === undefined) process.env[key] = value;
+      }
+    }
+  } catch (fallbackError) {
+    console.warn('Could not load .env file:', fallbackError.message);
+  }
+}
 const express = require('express');
 const path = require('path');
 const { TextDecoder } = require('util');
 const { classifyDistance, scoreLocation } = require('./src/riskEngine');
 const { fetchRealSofiaMinimartLocations } = require('./src/minimartSource');
+const { DEFAULT_MINIMART_PROMPT, analyzeMinimartLocation } = require('./src/minimartAdvisor');
 
 const app = express();
+app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || '';
 
@@ -178,59 +205,6 @@ const sourceHomepages = {
   'imot.bg': 'https://www.imot.bg/',
   'alo.bg': 'https://www.alo.bg/',
 };
-
-const uiExtractedCommercialListings = [
-  {
-    id: 'ui-imot-1',
-    source: 'imot.bg',
-    title: 'Дава под наем МАГАЗИН град София, Витоша',
-    address: 'София, Витоша',
-    district: 'София',
-    area: 84,
-    publishedAt: Date.now() - 2 * 60 * 60 * 1000,
-    url: 'https://www.imot.bg/obiava-2m179060746866429-dava-pod-naem-magazin-grad-sofiya-vitosha-bul-simeonovsko-shose',
-  },
-  {
-    id: 'ui-imot-2',
-    source: 'imot.bg',
-    title: 'Дава под наем МАГАЗИН град София, Гоце Делчев',
-    address: 'София, Гоце Делчев',
-    district: 'София',
-    area: 64,
-    publishedAt: Date.now() - 5 * 60 * 60 * 1000,
-    url: 'https://www.imot.bg/obiava-2m171569914433114-dava-pod-naem-magazin-grad-sofiya-gotse-delchev',
-  },
-  {
-    id: 'ui-imot-3',
-    source: 'imot.bg',
-    title: 'Дава под наем МАГАЗИН град София, Полигона',
-    address: 'София, Полигона',
-    district: 'София',
-    area: 72,
-    publishedAt: Date.now() - 7 * 60 * 60 * 1000,
-    url: 'https://www.imot.bg/obiava-2m178530627730520-dava-pod-naem-magazin-grad-sofiya-poligona',
-  },
-  {
-    id: 'ui-imot-4',
-    source: 'imot.bg',
-    title: 'Дава под наем МАГАЗИН град София, Студентски град',
-    address: 'София, Студентски град',
-    district: 'София',
-    area: 68,
-    publishedAt: Date.now() - 9 * 60 * 60 * 1000,
-    url: 'https://www.imot.bg/obiava-2m178801233762863-dava-pod-naem-magazin-grad-sofiya-studentski-grad-ul-akad-stefan-mladenov',
-  },
-  {
-    id: 'ui-imot-5',
-    source: 'imot.bg',
-    title: 'Дава под наем МАГАЗИН град София, Център',
-    address: 'София, Център',
-    district: 'София',
-    area: 56,
-    publishedAt: Date.now() - 12 * 60 * 60 * 1000,
-    url: 'https://www.imot.bg/obiava-2m178713274564039-dava-pod-naem-magazin-grad-sofiya-tsentar',
-  },
-];
 
 function collectImotListingPages(html, pageUrl) {
   const seen = new Set();
@@ -546,7 +520,7 @@ async function fetchOpenSofiaListings() {
     });
 
     if (!firstResponse.ok) {
-      return uiExtractedCommercialListings;
+      return [];
     }
 
     const firstHtml = new TextDecoder('windows-1251').decode(new Uint8Array(await firstResponse.arrayBuffer()));
@@ -585,7 +559,7 @@ async function fetchOpenSofiaListings() {
     console.warn('Failed to load Sofia imot.bg listings:', error.message);
   }
 
-  return uiExtractedCommercialListings;
+  return [];
 }
 
 async function fetchLiveListings() {
@@ -766,6 +740,38 @@ app.get('/api/minimarkets', async (_req, res) => {
   });
 });
 
+app.get('/api/ai-status', (_req, res) => {
+  res.json({
+    configured: Boolean(process.env.GEMINI_API_KEY),
+    model: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
+    defaultPrompt: DEFAULT_MINIMART_PROMPT,
+  });
+});
+
+app.post('/api/analyze-minimart', async (req, res) => {
+  const listing = req.body?.listing || req.body || {};
+  const customPrompt = req.body?.prompt;
+
+  if (!listing.address && !listing.title) {
+    return res.status(400).json({ error: 'Липсва адрес на обявата за анализ.' });
+  }
+
+  try {
+    const analysis = await analyzeMinimartLocation(listing, { customPrompt });
+    res.json({ ...analysis, promptUsed: String(customPrompt || '').trim() ? 'custom' : 'default' });
+  } catch (error) {
+    if (error.code === 'AI_NOT_CONFIGURED') {
+      return res.status(503).json({
+        error: 'AI анализът не е настроен. Добави GEMINI_API_KEY в средата на сървъра.',
+        code: 'AI_NOT_CONFIGURED',
+        hint: 'Вземи безплатен ключ от https://aistudio.google.com/app/apikey и стартирай сървъра с GEMINI_API_KEY=твоя_ключ',
+      });
+    }
+    console.warn('AI minimart analysis failed:', error.message, error?.cause?.message || '');
+    res.status(502).json({ error: `AI анализът се провали: ${error.message}` });
+  }
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (_req, res) => {
@@ -774,7 +780,7 @@ app.get('/', (_req, res) => {
 
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://localhost:${PORT} (build: ai-status v1)`);
   });
 }
 

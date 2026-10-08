@@ -10,10 +10,9 @@
     <div class="page-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">София</p>
-          <h1>Всички открити обяви от imot.bg</h1>
+          <h1>Приложение за Гери</h1>
+          <p class="eyebrow">в момента работи само за София</p>
         </div>
-        <div class="badge">40–100 кв.м.</div>
       </header>
 
       <main>
@@ -26,20 +25,12 @@
         <section id="listingsView" class="tab-panel active card panel">
           <div class="filter-row">
             <h2 id="listingsHeading">Отворени обяви в София</h2>
-            <label class="lookback-control" for="hoursFilter">
-              Показване за последните
-              <select id="hoursFilter">
-                <option value="all" selected>Без лимит</option>
-                <option value="6">6 часа</option>
-                <option value="12">12 часа</option>
-                <option value="24">24 часа</option>
-                <option value="48">48 часа</option>
-                <option value="72">72 часа</option>
-                <option value="168">7 дни</option>
-              </select>
-            </label>
           </div>
-          <p id="resultsMeta">Зареждане на живи данни...</p>
+          <p id="resultsMeta">
+            Показани: <span id="listingCount">0</span> обяви от
+            <a href="https://www.imot.bg/obiavi/naemi/grad-sofiya/magazin?kv_min=40&amp;kv_max=100" target="_blank" rel="noreferrer">imot.bg</a>.
+            Филтри: наем, магазин, София, 40–100 кв.м.
+          </p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -71,6 +62,15 @@
           <div class="filter-row">
             <h2>Анализирани обяви</h2>
           </div>
+          <div class="ai-panel">
+            <div class="ai-status-row">
+              <span id="aiStatusBadge" class="status-pill near">AI: проверка...</span>
+              <button id="analyzeAllAi" type="button" class="secondary-action" disabled>AI анализ на всички</button>
+            </div>
+            <label class="ai-label" for="aiPrompt">Промпт за AI анализа (можеш да го редактираш):</label>
+            <textarea id="aiPrompt" rows="7" class="ai-textarea" placeholder="Инструкции към AI модела..."></textarea>
+            <p class="ai-hint">Анализът използва отдалечен модел Google Gemini. Нужен е GEMINI_API_KEY на сървъра.</p>
+          </div>
           <div id="analysisSummary" class="summary-grid"></div>
           <div class="table-wrap">
             <table>
@@ -80,6 +80,7 @@
                   <th>Площ</th>
                   <th>Разстояние</th>
                   <th>Статус</th>
+                  <th>AI за минимарт</th>
                   <th>Линк</th>
                 </tr>
               </thead>
