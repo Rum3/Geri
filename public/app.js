@@ -77,7 +77,7 @@ async function loadAnalysisSection() {
   if (!entries.length) {
     analysisTable.innerHTML = `
       <tr>
-        <td colspan="6">Няма анализирани обяви.</td>
+        <td colspan="5">Няма анализирани обяви.</td>
       </tr>
     `;
     return;
@@ -85,7 +85,6 @@ async function loadAnalysisSection() {
 
   analysisTable.innerHTML = entries
     .map((listing, index) => {
-      const distance = listing.distanceToNearestMinimarket ?? 0;
       const riskClass = listing.riskStatus || 'far';
       const riskText = riskClass === 'very_close' ? 'Много близо' : riskClass === 'near' ? 'Близо' : 'Далече';
       const aiCell = aiResults.has(index)
@@ -95,7 +94,6 @@ async function loadAnalysisSection() {
         <tr>
           <td>${listing.address || listing.title || 'Адрес не е наличен'}</td>
           <td>${listing.area} кв.м.</td>
-          <td>${distance} м</td>
           <td><span class="status-pill ${riskClass}">${riskText}</span></td>
           <td>${aiCell}</td>
           <td><a href="${listing.url}" target="_blank" rel="noreferrer">Отвори</a></td>
